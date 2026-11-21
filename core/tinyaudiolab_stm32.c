@@ -2,6 +2,7 @@
 #include "tinyaudiolab.h"
 
 #include "main.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -31,6 +32,48 @@ __attribute__((weak)) void  on_key_down(char key) { (void)key; }
 static int16_t audio_rx_buf[DMA_TOTAL_SAMPLES] __attribute__((aligned(32)));
 static int16_t audio_tx_buf[DMA_TOTAL_SAMPLES] __attribute__((aligned(32)));
 static volatile bool g_audio_running = false;
+
+typedef struct {
+    uint32_t deadline;
+    bool active;
+} makenote_timer_t;
+
+static makenote_timer_t g_makenote_timers[128];
+
+void makenote(int note, float velocity, uint32_t duration_ms) {
+    if (note < 0 || note > 127) {
+        printf("[TinyAudioLab] makenote: note must be in range 0~127\n");
+        return;
+    }
+    if (duration_ms > INT32_MAX) {
+        printf("[TinyAudioLab] makenote: duration must not exceed %d ms\n", INT32_MAX);
+        return;
+    }
+
+    g_makenote_timers[note].deadline = HAL_GetTick() + duration_ms;
+    g_makenote_timers[note].active = true;
+    on_note_on(note, velocity);
+}
+
+static void process_makenote_timers(void) {
+    uint32_t now = HAL_GetTick();
+    for (int note = 0; note < 128; note++) {
+        if (g_makenote_timers[note].active &&
+            (int32_t)(now - g_makenote_timers[note].deadline) >= 0) {
+            g_makenote_timers[note].active = false;
+            on_note_off(note);
+        }
+    }
+}
+
+static void stop_makenote_timers(void) {
+    for (int note = 0; note < 128; note++) {
+        if (g_makenote_timers[note].active) {
+            g_makenote_timers[note].active = false;
+            on_note_off(note);
+        }
+    }
+}
 
 static void audio_process_half_block(int16_t *rx_ptr, int16_t *tx_ptr) {
     for (int i = 0; i < TAL_BUFFER_SIZE; i++) {
@@ -149,6 +192,7 @@ float tal_randf(void) {
 int tal_start(void) {
     memset(audio_rx_buf, 0, sizeof(audio_rx_buf));
     memset(audio_tx_buf, 0, sizeof(audio_tx_buf));
+    memset(g_makenote_timers, 0, sizeof(g_makenote_timers));
 
     setup();
 
@@ -162,11 +206,13 @@ int tal_start(void) {
 
 void tal_run(void) {
     while (1) {
+        process_makenote_timers();
         midi_poll_and_dispatch();
     }
 }
 
 void tal_stop(void) {
+    stop_makenote_timers();
     g_audio_running = false;
     HAL_SAI_DMAStop(&hsai_BlockA1);
     HAL_SAI_DMAStop(&hsai_BlockB1);

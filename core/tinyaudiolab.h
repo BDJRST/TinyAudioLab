@@ -39,6 +39,7 @@ void  on_note_on(int note, float velocity);  // MIDI 音符按下 (note: 0~127, 
 void  on_note_off(int note);                 // MIDI 音符松开
 void  on_cc(int cc, float value);            // MIDI 控制器旋钮/推子 (val: 0.0~1.0)
 void  on_key_down(char key);                 // 键盘按键触发（PC 主线程运行，STM32 下忽略）
+void  makenote(int note, float velocity, uint32_t duration_ms); // 非阻塞演奏，时长到后自动松开
 
 // ============================================================================
 // 2. 引擎控制钩子

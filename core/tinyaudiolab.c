@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #define TINYAUDIOLAB_INTERNAL
 #include "tinyaudiolab.h"
 
@@ -47,10 +48,65 @@ static RtMidiInPtr g_midiIn     = NULL;
 static bool        g_midiOpened = false;
 static atomic_bool g_started    = false;
 
+typedef struct {
+    uint32_t deadline;
+    bool active;
+} makenote_timer_t;
+
+static makenote_timer_t g_makenote_timers[128];
+
 // 托管加载缓冲区指针，退出时统一安全释放（防止学生代码内存泄漏）
 #define MAX_LOADED_BUFFERS 16
 static float *g_allocated_buffers[MAX_LOADED_BUFFERS] = {0};
 static int    g_allocated_count = 0;
+
+static uint32_t tal_millis(void) {
+#ifdef _WIN32
+    return (uint32_t)GetTickCount();
+#else
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        perror("[TinyAudioLab] clock_gettime");
+        return 0;
+    }
+    return (uint32_t)((uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u);
+#endif
+}
+
+void makenote(int note, float velocity, uint32_t duration_ms) {
+    if (note < 0 || note > 127) {
+        fprintf(stderr, "[TinyAudioLab] makenote: note must be in range 0~127\n");
+        return;
+    }
+    if (duration_ms > INT32_MAX) {
+        fprintf(stderr, "[TinyAudioLab] makenote: duration must not exceed %d ms\n", INT32_MAX);
+        return;
+    }
+
+    g_makenote_timers[note].deadline = tal_millis() + duration_ms;
+    g_makenote_timers[note].active = true;
+    on_note_on(note, velocity);
+}
+
+static void process_makenote_timers(void) {
+    uint32_t now = tal_millis();
+    for (int note = 0; note < 128; note++) {
+        if (g_makenote_timers[note].active &&
+            (int32_t)(now - g_makenote_timers[note].deadline) >= 0) {
+            g_makenote_timers[note].active = false;
+            on_note_off(note);
+        }
+    }
+}
+
+static void stop_makenote_timers(void) {
+    for (int note = 0; note < 128; note++) {
+        if (g_makenote_timers[note].active) {
+            g_makenote_timers[note].active = false;
+            on_note_off(note);
+        }
+    }
+}
 
 static void enable_hardware_ftz(void) {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
@@ -230,6 +286,7 @@ int tal_start(void) {
     if (atomic_load(&g_started)) return 0;
     enable_hardware_ftz();
     srand((unsigned int)time(NULL));
+    memset(g_makenote_timers, 0, sizeof(g_makenote_timers));
 
 #ifdef _WIN32
     if (!GetConsoleWindow()) {
@@ -349,6 +406,7 @@ void tal_run(void) {
     posix_enable_raw_mode();
 #endif
     while (1) {
+        process_makenote_timers();
         int ch = 0;
 #ifdef _WIN32
         if (_kbhit()) {
@@ -370,9 +428,7 @@ void tal_run(void) {
 #endif
         if (ch == 27) break; // ESC 退出
         if (ch == ' ') {
-            on_note_on(60, 0.85f);
-            sleep_ms(400);
-            on_note_off(60);
+            makenote(60, 0.85f, 400);
         } else if (ch >= 32 && ch <= 126) {
             on_key_down((char)ch);
         }
@@ -384,6 +440,8 @@ void tal_run(void) {
 
 void tal_stop(void) {
     if (!atomic_load(&g_started)) return;
+
+    stop_makenote_timers();
 
     if (g_audio) {
         if (rtaudio_is_stream_running(g_audio)) rtaudio_stop_stream(g_audio);
