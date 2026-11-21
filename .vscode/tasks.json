@@ -1,0 +1,87 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Create Build Dir (Windows)",
+            "type": "shell",
+            "command": "cmd",
+            "args": ["/c", "if not exist build mkdir build"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Build TinyAudioLab",
+            "type": "shell",
+            "command": "make",
+            "args": ["all"],
+            "windows": {
+                "dependsOn": ["Create Build Dir (Windows)"],
+                "command": "gcc",
+                "args": [
+                    "-std=c11",
+                    "-O2",
+                    "-msse2",
+                    "-mfpmath=sse",
+                    "-ffp-contract=fast",
+                    "-fno-math-errno",
+                    "-Wall",
+                    "-Wextra",
+                    "-Wuninitialized",
+                    "-g",
+
+                    "-I${workspaceFolder}/core",
+                    "${workspaceFolder}/src/main.c",
+                    "${workspaceFolder}/core/tinyaudiolab.c",
+                    "-o",
+                    "${workspaceFolder}/build/tinyaudiolab_app.exe",
+
+                    "-static",
+                    "-lrtaudio",
+                    "-lrtmidi",
+                    "-lsndfile",
+                    "-lstdc++",
+
+                    "-lFLAC",
+                    "-lvorbisenc",
+                    "-lvorbis",
+                    "-logg",
+                    "-lopus",
+                    "-lmpg123",
+                    "-lmp3lame",
+                    "-lshlwapi",
+
+                    "-lwinmm",
+                    "-lole32",
+                    "-ldsound",
+                    "-lksuser",
+                    "-lmfplat",
+                    "-lmfuuid",
+                    "-lwmcodecdspuuid",
+                    "-lm"
+                ]
+            },
+            "osx": {
+                "command": "make",
+                "args": ["all"]
+            },
+            "linux": {
+                "command": "make",
+                "args": ["all"]
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Clean TinyAudioLab",
+            "type": "shell",
+            "command": "make clean",
+            "windows": {
+                "command": "cmd",
+                "args": ["/c", "if exist build rmdir /s /q build"]
+            },
+            "problemMatcher": []
+        }
+    ]
+}

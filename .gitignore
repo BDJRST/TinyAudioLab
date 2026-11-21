@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+*.exe
+*.o
+*.obj
+*.a
+*.dll
+*.dSYM/
+
+# Keep cross-platform VS Code configs
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/c_cpp_properties.json
+
+# OS temporary files
+.DS_Store
+Thumbs.db
